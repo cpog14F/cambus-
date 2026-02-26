@@ -116,7 +116,7 @@ def ejecutar_simulacion_automatica(max_llegadas=3, max_salidas=3):
 # STREAMLIT - INTERFAZ
 # ==============================
 st.set_page_config(page_title="Sistema Control - Estación de Trailers", layout="wide")
-st.title("🚛 Sistema de Control - Estación de Trailers")
+st.title("CamBus")
 
 # Inicializar session_state
 if "user" not in st.session_state:
@@ -346,4 +346,5 @@ try:
     st.write(f"Puertas totales: **{total_puertas}** — Ocupadas: **{ocupadas}** ({porcentaje:.1f}%)")
 except Exception:
     pass
+
 
