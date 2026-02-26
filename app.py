@@ -194,6 +194,107 @@ else:
                 st.markdown(f"<div style='background:#ccffcc;padding:6px;border-radius:6px'>Puerta {num}<br><b>LIBRE</b></div>", unsafe_allow_html=True)
 
 # ==============================
+# CRUD TRAILERS
+# ==============================
+st.divider()
+st.header("🚛 Gestión de Trailers")
+
+# Obtener trailers
+trailers_resp = supabase.table("trailers").select("*").order("id_trailer").execute()
+df_trailers = pd.DataFrame(trailers_resp.data)
+
+# -------------------------
+# MOSTRAR TABLA
+# -------------------------
+if df_trailers.empty:
+    st.write("No hay trailers registrados.")
+else:
+    st.dataframe(df_trailers)
+
+# -------------------------
+# SOLO ADMIN PUEDE MODIFICAR
+# -------------------------
+if st.session_state.rol == "ADMIN":
+
+    st.subheader("➕ Agregar Nuevo Trailer")
+    nueva_placa = st.text_input("Placa nueva")
+
+    if st.button("Crear Trailer"):
+        if nueva_placa.strip() == "":
+            st.warning("La placa no puede estar vacía.")
+        else:
+            try:
+                supabase.table("trailers").insert({
+                    "placa": nueva_placa.strip().upper()
+                }).execute()
+                st.success("Trailer creado correctamente.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error al crear trailer: {e}")
+
+    st.divider()
+    st.subheader("✏ Editar Trailer")
+
+    if not df_trailers.empty:
+        trailer_edit = st.selectbox(
+            "Selecciona trailer a editar",
+            df_trailers["id_trailer"],
+            format_func=lambda x: f"ID {x} - {df_trailers[df_trailers['id_trailer']==x]['placa'].values[0]}"
+        )
+
+        nueva_placa_edit = st.text_input("Nueva placa")
+
+        if st.button("Actualizar Trailer"):
+            if nueva_placa_edit.strip() == "":
+                st.warning("La placa no puede estar vacía.")
+            else:
+                try:
+                    supabase.table("trailers").update({
+                        "placa": nueva_placa_edit.strip().upper()
+                    }).eq("id_trailer", trailer_edit).execute()
+                    st.success("Trailer actualizado.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error al actualizar: {e}")
+
+    st.divider()
+    st.subheader("❌ Eliminar Trailer")
+
+    if not df_trailers.empty:
+        trailer_delete = st.selectbox(
+            "Selecciona trailer a eliminar",
+            df_trailers["id_trailer"],
+            key="delete_trailer",
+            format_func=lambda x: f"ID {x} - {df_trailers[df_trailers['id_trailer']==x]['placa'].values[0]}"
+        )
+
+        if st.button("Eliminar Trailer"):
+            try:
+                # Verificar si tiene registros activos
+                registros_activos = supabase.table("registros") \
+                    .select("id_registro") \
+                    .eq("id_trailer", trailer_delete) \
+                    .is_("hora_salida", None) \
+                    .execute()
+
+                if registros_activos.data:
+                    st.error("No se puede eliminar: el trailer está actualmente en una puerta.")
+                else:
+                    supabase.table("trailers") \
+                        .delete() \
+                        .eq("id_trailer", trailer_delete) \
+                        .execute()
+
+                    st.success("Trailer eliminado correctamente.")
+                    st.rerun()
+
+            except Exception as e:
+                st.error(f"Error al eliminar: {e}")
+
+else:
+    st.info("Usuario con permisos de solo lectura.")
+
+# ==============================
 # HISTORIAL DE REGISTROS
 # ==============================
 st.subheader("📜 Historial de Registros (últimos 200)")
@@ -245,3 +346,4 @@ try:
     st.write(f"Puertas totales: **{total_puertas}** — Ocupadas: **{ocupadas}** ({porcentaje:.1f}%)")
 except Exception:
     pass
+
