@@ -4,244 +4,104 @@ import random
 from datetime import datetime
 from supabase import create_client, Client
 
-# ==============================
-# CONFIGURACIÓN SUPABASE
-# ==============================
-SUPABASE_URL = "https://qkpdwzqxeweztwqbumxg.supabase.co"
-SUPABASE_KEY = "sb_publishable_BIDqJoWRx2tF1amMejRUFA_XZZfxXgD"
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# ... (Mantenemos tu configuración de SUPABASE_URL y KEY igual) ...
 
 # ==============================
-# UTILIDADES
-# ==============================
-def parse_iso(dt_str):
-    """Convierte strings ISO con o sin 'Z' a datetime."""
-    if dt_str is None:
-        return None
-    try:
-        # reemplaza Z por +00:00 para compatibilidad con fromisoformat
-        if dt_str.endswith("Z"):
-            dt_str = dt_str[:-1] + "+00:00"
-        return datetime.fromisoformat(dt_str)
-    except Exception:
-        # fallback: intenta sin cambios
-        try:
-            return datetime.fromisoformat(dt_str)
-        except Exception:
-            return None
-
-def generar_placa():
-    """Genera una placa aleatoria tipo TRL1234"""
-    return f"TRL{random.randint(1000,9999)}"
-
-# ==============================
-# SIMULACIÓN (Llegadas y Salidas)
+# SIMULACIÓN MEJORADA
 # ==============================
 def simular_llegada():
-    """Simula la llegada de un trailer: crea trailer si no existe, asigna puerta libre y crea registro."""
-    placa = generar_placa()
-
-    # Verificar si existe trailer
-    trailer = supabase.table("trailers").select("id_trailer").eq("placa", placa).execute()
-    if not trailer.data:
-        insert_trailer = supabase.table("trailers").insert({"placa": placa}).execute()
-        # supabase devuelve lista; obtener id
-        id_trailer = insert_trailer.data[0]["id_trailer"]
+    """Busca puertas libres y elige una al azar, no la primera."""
+    # 1. Obtener todas las placas existentes para elegir una al azar o crear nueva
+    res_trailers = supabase.table("trailers").select("id_trailer", "placa").execute()
+    if res_trailers.data:
+        trailer_random = random.choice(res_trailers.data)
+        id_trailer = trailer_random["id_trailer"]
+        placa = trailer_random["placa"]
     else:
-        id_trailer = trailer.data[0]["id_trailer"]
+        placa = generar_placa()
+        insert_t = supabase.table("trailers").insert({"placa": placa}).execute()
+        id_trailer = insert_t.data[0]["id_trailer"]
 
-    # Buscar puerta libre (primer resultado)
-    puerta = supabase.table("puertas").select("id_puerta, numero_puerta").eq("estado", "LIBRE").limit(1).execute()
-    if puerta.data:
-        id_puerta = puerta.data[0]["id_puerta"]
-        hora_entrada = datetime.utcnow().isoformat() + "Z"  # usar UTC y marcar con Z
-
-        # Insertar registro
+    # 2. Buscar TODAS las puertas libres
+    puertas_libres = supabase.table("puertas").select("id_puerta").eq("estado", "LIBRE").execute()
+    
+    if puertas_libres.data:
+        # ¡AQUÍ ESTÁ EL CAMBIO! Elegimos una puerta al azar de la lista de libres
+        puerta_elegida = random.choice(puertas_libres.data)
+        id_p = puerta_elegida["id_puerta"]
+        
+        hora_entrada = datetime.utcnow().isoformat() + "Z"
         supabase.table("registros").insert({
             "id_trailer": id_trailer,
-            "id_puerta": id_puerta,
+            "id_puerta": id_p,
             "hora_entrada": hora_entrada
         }).execute()
 
-        # Actualizar puerta a OCUPADA
-        supabase.table("puertas").update({"estado": "OCUPADA"}).eq("id_puerta", id_puerta).execute()
-        return f"Llegada: trailer {placa} -> puerta {id_puerta}"
-    else:
-        return "Llegada: no hay puertas libres"
-
-def simular_salida():
-    """Simula la salida de un trailer: cierra el registro más antiguo abierto y libera la puerta."""
-    # Seleccionar un registro con hora_salida NULL (es decir abierto)
-    registro = supabase.table("registros").select("id_registro, id_puerta, hora_entrada").is_("hora_salida", None).limit(1).execute()
-    if registro.data:
-        id_registro = registro.data[0]["id_registro"]
-        id_puerta = registro.data[0]["id_puerta"]
-        hora_entrada_str = registro.data[0].get("hora_entrada")
-        hora_entrada = parse_iso(hora_entrada_str) or datetime.utcnow()
-
-        hora_salida = datetime.utcnow()
-        tiempo = hora_salida - hora_entrada
-
-        # Actualizar registro: hora_salida y tiempo_estancia (texto ISO del intervalo)
-        supabase.table("registros").update({
-            "hora_salida": hora_salida.isoformat() + "Z",
-            "tiempo_estancia": str(tiempo)
-        }).eq("id_registro", id_registro).execute()
-
-        # Liberar la puerta
-        supabase.table("puertas").update({"estado": "LIBRE"}).eq("id_puerta", id_puerta).execute()
-        return f"Salida: registro {id_registro} -> puerta {id_puerta} liberada"
-    else:
-        return "Salida: no hay trailers en puertas"
-
-def ejecutar_simulacion_automatica(max_llegadas=3, max_salidas=3):
-    """Ejecuta un lote aleatorio de llegadas y salidas en una sola pasada.
-       Devuelve lista de mensajes con lo ocurrido."""
-    msgs = []
-    # números aleatorios de eventos (puedes ajustar aquí)
-    n_llegadas = random.randint(0, max_llegadas)
-    n_salidas = random.randint(0, max_salidas)
-
-    # Prioridad: alternar llegada/salida para mayor realismo
-    for _ in range(max(n_llegadas, n_salidas)):
-        if _ < n_llegadas:
-            msgs.append(simular_llegada())
-        if _ < n_salidas:
-            msgs.append(simular_salida())
-
-    return msgs
+        supabase.table("puertas").update({"estado": "OCUPADA"}).eq("id_puerta", id_p).execute()
+        return f"Llegada: {placa} -> Puerta {id_p} (Aleatoria)"
+    return "Llegada: Patio lleno."
 
 # ==============================
-# STREAMLIT - INTERFAZ
+# CRUD DE TRAILERS (Nueva Función)
 # ==============================
-st.set_page_config(page_title="Sistema Control - Estación de Trailers", layout="wide")
-st.title("🚛 Sistema de Control - Estación de Trailers")
+def seccion_crud_trailers():
+    st.header("🚛 Gestión de Flota (CRUD)")
+    
+    tab1, tab2, tab3 = st.tabs(["Listar y Editar", "Añadir Nuevo", "Eliminar"])
 
-# Inicializar session_state
-if "user" not in st.session_state:
-    st.session_state.user = None
-    st.session_state.rol = None
+    # --- LISTAR Y EDITAR ---
+    with tab1:
+        res = supabase.table("trailers").select("*").order("id_trailer").execute()
+        df = pd.DataFrame(res.data)
+        if not df.empty:
+            st.write("Selecciona un trailer para editar su placa:")
+            selected_id = st.selectbox("ID del Trailer", df["id_trailer"])
+            nueva_placa = st.text_input("Nueva Placa", key="edit_placa")
+            if st.button("Actualizar Placa"):
+                supabase.table("trailers").update({"placa": nueva_placa}).eq("id_trailer", selected_id).execute()
+                st.success("¡Placa actualizada!")
+                st.rerun()
+            st.dataframe(df, use_container_width=True)
 
-# ------------------------------
-# LOGIN SIMPLE
-# ------------------------------
-if st.session_state.user is None:
-    username = st.text_input("Usuario")
-    password = st.text_input("Contraseña", type="password")
+    # --- AÑADIR ---
+    with tab2:
+        nueva_p = st.text_input("Placa del nuevo trailer (ej. MX-ABC-1234)")
+        if st.button("Guardar Trailer"):
+            try:
+                supabase.table("trailers").insert({"placa": nueva_p}).execute()
+                st.success(f"Trailer {nueva_p} registrado.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error: Tal vez la placa ya existe.")
 
-    if st.button("Ingresar"):
-        response = supabase.table("usuarios").select("rol").eq("username", username).eq("password", password).execute()
-        if response.data:
-            st.session_state.user = username
-            st.session_state.rol = response.data[0]["rol"]
-            st.success("Login correcto")
+    # --- ELIMINAR ---
+    with tab3:
+        id_del = st.number_input("ID a eliminar", step=1)
+        if st.button("Confirmar Eliminación", type="primary"):
+            # Nota: Fallará si el trailer tiene registros (por integridad referencial)
+            supabase.table("trailers").delete().eq("id_trailer", id_del).execute()
+            st.warning(f"Trailer {id_del} eliminado.")
             st.rerun()
-        else:
-            st.error("Credenciales incorrectas")
-    st.stop()  # detener render hasta login
-else:
-    st.sidebar.write(f"Usuario: {st.session_state.user}")
-    st.sidebar.write(f"Rol: {st.session_state.rol}")
-
-    if st.sidebar.button("Cerrar sesión"):
-        st.session_state.user = None
-        st.session_state.rol = None
-        st.rerun()
 
 # ==============================
-# EJECUTAR SIMULACIÓN AUTOMÁTICA (si es ADMIN)
+# INTERFAZ PRINCIPAL (MODIFICADA)
 # ==============================
-sim_msgs = []
-if st.session_state.rol == "ADMIN":
-    st.header("⚙ Simulación Automática (ejecutada en cada carga de la página)")
-    try:
-        sim_msgs = ejecutar_simulacion_automatica(max_llegadas=3, max_salidas=3)
-    except Exception as e:
-        st.error(f"Error al ejecutar la simulación: {e}")
+# ... (Después del login) ...
 
-    # Mostrar resultados de la simulación
-    if sim_msgs:
-        for m in sim_msgs:
-            st.write("·", m)
-    else:
-        st.write("No se generaron eventos en esta ejecución.")
+menu = st.sidebar.selectbox("Ir a:", ["Dashboard", "Gestión de Trailers", "Historial"])
 
-# ==============================
-# MOSTRAR ESTADO DE PUERTAS
-# ==============================
-st.subheader("📊 Estado de Puertas")
-puertas = supabase.table("puertas").select("id_puerta, numero_puerta, estado").order("numero_puerta").execute()
-df_puertas = pd.DataFrame(puertas.data)
-if df_puertas.empty:
-    st.write("No hay datos de puertas.")
-else:
-    # mostrar como dataframe y también un tablero simple de colores (texto)
-    st.dataframe(df_puertas)
+if menu == "Dashboard":
+    # Aquí pones tu lógica de simulación y el tablero de puertas 10x10
+    if st.session_state.rol == "ADMIN":
+        if st.button("🚀 Ejecutar Ciclo de Simulación"):
+            msgs = ejecutar_simulacion_automatica()
+            for m in msgs: st.toast(m) # Toast es más limpio que escribir en pantalla
+    
+    # ... (Aquí va tu código de las cajitas de colores de las puertas) ...
 
-    # tablero compacto: 10 columnas x 10 filas
-    st.markdown("**Tablero (OCUPADA / LIBRE)**")
-    cols = st.columns(10)
-    # Crear lista ordenada por numero_puerta
-    for i, row in df_puertas.sort_values("numero_puerta").reset_index(drop=True).iterrows():
-        col_idx = i % 10
-        with cols[col_idx]:
-            estado = row["estado"]
-            num = int(row["numero_puerta"])
-            if estado == "OCUPADA":
-                st.markdown(f"<div style='background:#ffcccc;padding:6px;border-radius:6px'>Puerta {num}<br><b>OCUPADA</b></div>", unsafe_allow_html=True)
-            else:
-                st.markdown(f"<div style='background:#ccffcc;padding:6px;border-radius:6px'>Puerta {num}<br><b>LIBRE</b></div>", unsafe_allow_html=True)
+elif menu == "Gestión de Trailers":
+    seccion_crud_trailers()
 
-# ==============================
-# HISTORIAL DE REGISTROS
-# ==============================
-st.subheader("📜 Historial de Registros (últimos 200)")
-
-# Traer registros con join a trailers y puertas usando el nombre de relaciones que tengas
-# En Supabase PostgREST la sintaxis es: select("*, trailers(placa), puertas(numero_puerta)")
-historial = supabase.table("registros").select("""
-    id_registro,
-    hora_entrada,
-    hora_salida,
-    tiempo_estancia,
-    trailers ( placa ),
-    puertas ( numero_puerta )
-""").order("hora_entrada", desc=True).limit(200).execute()
-
-registros = []
-if historial.data:
-    for row in historial.data:
-        placa = None
-        numero_puerta = None
-        # Manejar structure del row (puede venir como dict)
-        if row.get("trailers"):
-            placa = row["trailers"].get("placa")
-        if row.get("puertas"):
-            numero_puerta = row["puertas"].get("numero_puerta")
-        registros.append({
-            "id_registro": row.get("id_registro"),
-            "placa": placa,
-            "numero_puerta": numero_puerta,
-            "hora_entrada": row.get("hora_entrada"),
-            "hora_salida": row.get("hora_salida"),
-            "tiempo_estancia": row.get("tiempo_estancia")
-        })
-
-df_historial = pd.DataFrame(registros)
-if df_historial.empty:
-    st.write("No hay registros aún.")
-else:
-    st.dataframe(df_historial)
-
-# ==============================
-# ESTADÍSTICAS SIMPLES
-# ==============================
-st.subheader("📈 Estadísticas rápidas")
-try:
-    total_puertas = len(df_puertas)
-    ocupadas = len(df_puertas[df_puertas["estado"] == "OCUPADA"]) if not df_puertas.empty else 0
-    porcentaje = (ocupadas / total_puertas * 100) if total_puertas else 0
-    st.write(f"Puertas totales: **{total_puertas}** — Ocupadas: **{ocupadas}** ({porcentaje:.1f}%)")
-except Exception:
-    pass
+elif menu == "Historial":
+    st.subheader("📜 Historial de Registros")
+    # ... (Aquí va tu código de la tabla de registros) ...
