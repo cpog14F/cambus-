@@ -5,7 +5,10 @@ from datetime import datetime
 from supabase import create_client, Client
 
 # ... (Mantenemos tu configuración de SUPABASE_URL y KEY igual) ...
+SUPABASE_URL = "https://qkpdwzqxeweztwqbumxg.supabase.co"
+SUPABASE_KEY = "sb_publishable_BIDqJoWRx2tF1amMejRUFA_XZZfxXgD"
 
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ==============================
 # SIMULACIÓN MEJORADA
 # ==============================
@@ -105,3 +108,4 @@ elif menu == "Gestión de Trailers":
 elif menu == "Historial":
     st.subheader("📜 Historial de Registros")
     # ... (Aquí va tu código de la tabla de registros) ...
+
