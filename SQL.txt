@@ -1,0 +1,88 @@
+/* =============================================================================
+SISTEMA DE GESTIÓN LOGÍSTICA "CAMBUS"
+Este script crea la base de datos, las tablas y carga datos maestros.
+=============================================================================
+*/
+
+-- 1. CONTEXTO Y CREACIÓN DE ESTRUCTURAS
+CREATE DATABASE cambus; -- Crea la base de datos física.
+USE cambus;            -- Indica al motor que las siguientes instrucciones son para esta DB.
+GO                     -- Ejecuta el lote de comandos anterior.
+
+-- Tabla de Puertas de Embarque
+CREATE TABLE puertas (
+    id_puerta SERIAL PRIMARY KEY,        -- ID único incremental (llave primaria).
+    numero_puerta INT UNIQUE NOT NULL,   -- El número de muelle físico; no se repite.
+    estado VARCHAR(20) DEFAULT 'LIBRE'   -- Estado inicial de cada muelle por defecto.
+);
+
+-- Tabla de Cámaras de Seguridad
+CREATE TABLE camaras (
+    id_camara SERIAL PRIMARY KEY,        -- ID único para cada dispositivo de video.
+    nombre VARCHAR(50)                   -- Identificador visual de la cámara.
+);
+
+-- Tabla de Unidades (Trailers)
+CREATE TABLE trailers (
+    id_trailer SERIAL PRIMARY KEY,       -- ID único para el vehículo.
+    placa VARCHAR(20) UNIQUE NOT NULL    -- Matrícula oficial; debe ser única y obligatoria.
+);
+
+-- Tabla de Control de Acceso (Usuarios)
+CREATE TABLE usuarios (
+    id_usuario SERIAL PRIMARY KEY,       -- ID de cuenta.
+    username VARCHAR(50) UNIQUE NOT NULL, -- Nombre de login único.
+    password VARCHAR(255) NOT NULL,      -- Clave de acceso (texto plano para este ejemplo).
+    rol VARCHAR(20) NOT NULL             -- Etiqueta de permisos: 'ADMIN' o 'CONSULTA'.
+);
+
+-- Tabla Intermedia (Relación Cámaras-Puertas)
+CREATE TABLE camara_puerta (
+    id SERIAL PRIMARY KEY,               -- ID de la asignación.
+    id_camara INT REFERENCES camaras(id_camara), -- Vínculo (FK) con la tabla cámaras.
+    id_puerta INT REFERENCES puertas(id_puerta)  -- Vínculo (FK) con la tabla puertas.
+);
+
+-- Tabla de Movimientos (Registros de entrada y salida)
+CREATE TABLE registros (
+    id_registro SERIAL PRIMARY KEY,      -- ID único por cada estancia de un trailer.
+    id_trailer INT REFERENCES trailers(id_trailer), -- Qué trailer ocupó el lugar.
+    id_puerta INT REFERENCES puertas(id_puerta),   -- Qué muelle se utilizó.
+    hora_entrada TIMESTAMP,              -- Fecha y hora de ingreso.
+    hora_salida TIMESTAMP,               -- Fecha y hora de salida.
+    tiempo_estancia INTERVAL             -- Cálculo de duración (tipo especial de tiempo).
+);
+
+-- 2. CARGA DE DATOS INICIALES (SEMILLA)
+
+-- Insertar usuarios base
+INSERT INTO usuarios (username, password, rol) VALUES
+('admin', 'admin123', 'ADMIN'),       -- Usuario con poder total.
+('consulta', 'consulta123', 'CONSULTA'); -- Usuario con acceso limitado.
+
+-- Generación masiva de 100 puertas (1 a 100)
+INSERT INTO puertas (numero_puerta, estado)
+SELECT i, 'LIBRE'                     -- 'i' toma el valor de la serie generada.
+FROM generate_series(1,100) AS i;     -- Función que crea una lista del 1 al 100.
+
+-- Generación masiva de 50 cámaras (CAM-1 a CAM-50)
+INSERT INTO camaras (nombre)
+SELECT 'CAM-' || i                    -- El símbolo '||' sirve para pegar (concatenar) texto con números.
+FROM generate_series(1,50) AS i;      -- Genera números del 1 al 50.
+
+-- Relacionar cámaras con puertas (Lógica: 1 cámara vigila 2 puertas)
+INSERT INTO camara_puerta (id_camara, id_puerta)
+SELECT 
+    ((numero_puerta - 1) / 2) + 1 AS id_camara, -- Fórmula para asignar Cámara 1 a Puerta 1 y 2, etc.
+    id_puerta                                   -- Toma el ID de la puerta de la tabla actual.
+FROM puertas;
+
+-- Generación masiva de 200 Trailers con placas aleatorias (Formato: MX-XX-0000)
+INSERT INTO trailers (placa)
+SELECT 
+    'MX-' ||                                    -- Prefijo de país.
+    CHR(65 + (random()*25)::int) ||             -- Letra aleatoria A (ASCII 65) a Z.
+    CHR(65 + (random()*25)::int) ||             -- Segunda letra aleatoria.
+    '-' ||                                      -- Separador.
+    (1000 + (random()*8999)::int)                -- Número aleatorio de 4 cifras.
+FROM generate_series(1,200);                    -- Crea 200 filas de trailers diferentes.
